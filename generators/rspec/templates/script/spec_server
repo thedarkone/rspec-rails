@@ -13,6 +13,13 @@ module Spec
       def run(argv, stderr, stdout)
         $stdout = stdout
         $stderr = stderr
+				
+        unless ENV['NO_TTY_FAKING']
+          # tell rspec it is OK to dump colored output
+          # works on OS X, haven't tested anywhere else
+          def $stdout.tty?; true; end
+          def $stderr.tty?; true; end
+        end
 
         ActiveRecord::Base.clear_reloadable_connections!
 
