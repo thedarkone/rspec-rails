@@ -6,15 +6,25 @@ require 'rbconfig'
 require 'spec'
 require 'optparse'
 
+RESTART_EVERY = 15
+
 # This is based on Florian Weber's TDDMate
 module Spec
   module Runner
     class RailsSpecServer
       
+      def initialize(options = {})
+        @options = options
+      end
+      
+      def restart_every
+        @options[:restart_every]
+      end
+      
       def run(argv, stderr, stdout)
         $stdout = stdout
         $stderr = stderr
-				
+        
         unless ENV['NO_TTY_FAKING']
           # tell rspec it is OK to dump colored output
           # works on OS X, haven't tested anywhere else
@@ -44,7 +54,17 @@ module Spec
           )
         )
         
+        runed_once
+        
         dispatcher.run_callbacks :after_dispatch, :enumerator => :reverse_each
+      end
+      
+      # automatic restarting of a spec_server
+      def runed_once
+        if restart_every
+          @run_count ||= 0
+          exit! if (@run_count += 1) > restart_every
+        end
       end
 
       def in_memory_database?
@@ -95,21 +115,44 @@ def daemonize(pid_file = nil)
   exit! 0
 end
 
+def restarting(&exec_server)
+  Signal.trap('INT') do
+    Process.kill('HUP', @child_pid) rescue nil
+    exit
+  end
+  
+  while true
+    @child_pid = Process.fork do
+      exec_server.call
+    end
+    Process.wait(@child_pid)
+  end
+end
+
 options = Hash.new
 opts = OptionParser.new
 opts.on("-d", "--daemon"){|v| options[:daemon] = true }
 opts.on("-p", "--pid PIDFILE"){|v| options[:pid] = v }
+opts.on('-r [RESTART_EVERY]', '--restart-every [RESTART_EVERY]',  'Specs running through spec_server do seem to leak memory.',
+                                                                  'This will keep restarting the spec_server after every [RESTART_EVERY] run.',
+                                                                  'Note that this will use almost double the memory as it uses forking after',
+                                                                  'loading the Rails env to speed things up.',
+                                                                  "By default RESTART_EVERY = #{RESTART_EVERY}.") do |v|
+  options[:restart_every] = (v && v.to_i) || RESTART_EVERY
+end
 opts.parse!(ARGV)
 
 puts "Ready"
 exec_server = lambda {
   trap("USR2") { restart_test_server } if Signal.list.has_key?("USR2")
-  DRb.start_service("druby://127.0.0.1:8989", Spec::Runner::RailsSpecServer.new)
+  DRb.start_service("druby://127.0.0.1:8989", Spec::Runner::RailsSpecServer.new(options))
   DRb.thread.join
 }
 
 if options[:daemon]
   daemonize(options[:pid], &exec_server)
+elsif options[:restart_every]
+  restarting(&exec_server)
 else
   exec_server.call
 end
