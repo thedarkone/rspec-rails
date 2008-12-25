@@ -57,6 +57,11 @@ module Spec
         runed_once
         
         dispatcher.run_callbacks :after_dispatch, :enumerator => :reverse_each
+        
+      # this is very handy, because otherwise it's just a useless #<DRb::DRbUnknownError: MissingSourceFile>  
+      rescue MissingSourceFile => e
+        puts "MissingSourceFile.path = #{e.path}"
+        raise e
       end
       
       # automatic restarting of a spec_server
