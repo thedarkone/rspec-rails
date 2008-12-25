@@ -10,6 +10,7 @@ require 'optparse'
 module Spec
   module Runner
     class RailsSpecServer
+      
       def run(argv, stderr, stdout)
         $stdout = stdout
         $stderr = stderr
@@ -21,22 +22,13 @@ module Spec
           def $stderr.tty?; true; end
         end
 
-        ActiveRecord::Base.clear_reloadable_connections!
+        dispatcher = ActionController::Dispatcher.new($stdout)
+        dispatcher.run_callbacks :before_dispatch
 
-        if ActionController.const_defined?(:Dispatcher)
-          dispatcher = ::ActionController::Dispatcher.new($stdout)
-          dispatcher.cleanup_application
-        elsif ::Dispatcher.respond_to?(:reset_application!)
-          ::Dispatcher.reset_application!
-        else
-          raise "Application reloading failed"
-        end
         if Object.const_defined?(:Fixtures) && Fixtures.respond_to?(:reset_cache)
           Fixtures.reset_cache
         end
 
-        ActiveSupport::Dependencies.mechanism = :load
-        require_dependency('application.rb') unless Object.const_defined?(:ApplicationController)
         load File.dirname(__FILE__) + '/../spec/spec_helper.rb'
 
         if in_memory_database?
@@ -51,6 +43,8 @@ module Spec
             $stdout
           )
         )
+        
+        dispatcher.run_callbacks :after_dispatch, :enumerator => :reverse_each
       end
 
       def in_memory_database?
@@ -61,11 +55,17 @@ module Spec
     end
   end
 end
-puts "Loading Rails environment"
+ENV["RAILS_ENV"] ||= "test"
+puts "Loading Rails #{ENV['RAILS_ENV']} environment"
 
-ENV["RAILS_ENV"] = "test"
 require File.expand_path(File.dirname(__FILE__) + "/../config/environment")
-require 'dispatcher'
+
+unless ActiveSupport::Dependencies.mechanism == :load
+  puts '==== WARINING =================================================================='
+  puts 'ActiveSupport::Dependencies.mechanism is not set to :load, changes to the files are not going to be picked up automaticly.'
+  puts "Please set 'config.cache_classes = false' in your config/environments/#{Rails.env}.rb file."
+  puts '=' * 80
+end
 
 def restart_test_server
   puts "restarting"
