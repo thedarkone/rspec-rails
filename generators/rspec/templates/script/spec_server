@@ -83,6 +83,23 @@ end
 ENV["RAILS_ENV"] ||= "test"
 puts "Loading Rails #{ENV['RAILS_ENV']} environment"
 
+options = Hash.new
+opts = OptionParser.new
+opts.on("-d", "--daemon"){|v| options[:daemon] = true }
+opts.on("-p", "--pid PIDFILE"){|v| options[:pid] = v }
+opts.on('-r [RESTART_EVERY]', '--restart-every [RESTART_EVERY]',  'Specs running through spec_server do seem to leak memory.',
+                                                                  'This will keep restarting the spec_server after every [RESTART_EVERY] run.',
+                                                                  'Note that this will use almost double the memory as it uses forking after',
+                                                                  'loading the Rails env to speed things up.',
+                                                                  "By default RESTART_EVERY = #{RESTART_EVERY}.") do |v|
+  options[:restart_every] = (v && v.to_i) || RESTART_EVERY
+end
+opts.parse!(ARGV)
+# hide all the args as there might be a Rails plugin (skinny_spec in my case),
+# that will load rSpec that in its turn will try to parse the args (looking for specs to run) and the whole thing blows up.
+# very similar to this: http://rspec.lighthouseapp.com/projects/5645/tickets/604-use-configgem-rspec-rails-breaks-custom-rspec-task
+ARGV.clear
+
 require File.expand_path(File.dirname(__FILE__) + "/../config/environment")
 
 unless ActiveSupport::Dependencies.mechanism == :load
@@ -133,19 +150,6 @@ def restarting(&exec_server)
     Process.wait(@child_pid)
   end
 end
-
-options = Hash.new
-opts = OptionParser.new
-opts.on("-d", "--daemon"){|v| options[:daemon] = true }
-opts.on("-p", "--pid PIDFILE"){|v| options[:pid] = v }
-opts.on('-r [RESTART_EVERY]', '--restart-every [RESTART_EVERY]',  'Specs running through spec_server do seem to leak memory.',
-                                                                  'This will keep restarting the spec_server after every [RESTART_EVERY] run.',
-                                                                  'Note that this will use almost double the memory as it uses forking after',
-                                                                  'loading the Rails env to speed things up.',
-                                                                  "By default RESTART_EVERY = #{RESTART_EVERY}.") do |v|
-  options[:restart_every] = (v && v.to_i) || RESTART_EVERY
-end
-opts.parse!(ARGV)
 
 puts "Ready"
 exec_server = lambda {
