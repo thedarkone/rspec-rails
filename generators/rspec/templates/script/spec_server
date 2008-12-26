@@ -54,9 +54,9 @@ module Spec
           )
         )
         
-        runed_once
-        
         dispatcher.run_callbacks :after_dispatch, :enumerator => :reverse_each
+        
+        runed_once
         
       # this is very handy, because otherwise it's just a useless #<DRb::DRbUnknownError: MissingSourceFile>  
       rescue MissingSourceFile => e
@@ -68,7 +68,12 @@ module Spec
       def runed_once
         if restart_every
           @run_count ||= 0
-          exit! if (@run_count += 1) > restart_every
+          if (@run_count += 1) > restart_every
+            Thread.new do
+              sleep(0.05) # give the time for the DRb 'run' method call to return and then die. kinda ugly :(
+              exit!
+            end 
+          end
         end
       end
 
